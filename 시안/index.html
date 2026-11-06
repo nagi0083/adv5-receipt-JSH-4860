@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경비 정산 (시안)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: sans-serif; font-size: 15px; color: #222; background: #fff; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 12px 16px 24px; }
+  h1 { font-size: 20px; margin: 4px 0 10px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid #999; }
+  .tabs button { flex: 0 0 auto; padding: 10px 18px; font-size: 15px; border: 1px solid #999; border-bottom: none; background: #eee; cursor: pointer; }
+  .tabs button.on { background: #fff; font-weight: bold; position: relative; top: 1px; }
+  section { padding: 14px 0; }
+  .hidden { display: none !important; }
+  .msg { min-height: 1.4em; margin: 6px 0 10px; }
+  .msg.err { color: #c00; }
+  .msg.ok { color: #060; }
+
+  /* 등록 칸: 넓으면 이름표 옆에 칸, 좁으면 이름표 아래에 칸 */
+  .row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .row label { font-weight: bold; }
+  .row input, .row select { width: 100%; padding: 8px; font-size: 15px; border: 1px solid #999; }
+  .row input.short { max-width: 120px; }
+  .hint { color: #666; font-size: 13px; }
+  .btn { padding: 10px 28px; font-size: 16px; border: 1px solid #555; background: #f4f4f4; cursor: pointer; }
+  .btn:disabled, select:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+  .center { text-align: center; margin-top: 8px; }
+
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .filters label { display: flex; gap: 6px; align-items: center; }
+  .filters select { padding: 6px; font-size: 15px; }
+
+  .tablebox { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid #ccc; padding: 7px 6px; text-align: left; white-space: nowrap; }
+  th { background: #f2f2f2; }
+  td.num, th.num { text-align: right; }
+  tbody.click tr { cursor: pointer; }
+  tbody.click tr:hover { background: #f7f7f7; }
+  tfoot td { font-weight: bold; border-bottom: none; }
+
+  .big { font-size: 17px; margin: 4px 0; }
+  .sum h3 { font-size: 16px; margin: 18px 0 6px; }
+
+  /* 상세 창 */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: center; align-items: flex-start; padding: 24px 12px; overflow-y: auto; }
+  .panel { background: #fff; width: 100%; max-width: 520px; border: 1px solid #777; padding: 14px 16px; }
+  .panel .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .panel .head b { font-size: 17px; }
+  .photo { background: #ccc; height: 260px; display: flex; align-items: center; justify-content: center; color: #555; margin-bottom: 10px; }
+  dl { display: grid; grid-template-columns: 80px 1fr; gap: 4px 8px; margin: 0 0 10px; }
+  dt { color: #555; }
+  dd { margin: 0; }
+
+  footer { border-top: 1px solid #ccc; margin-top: 16px; padding-top: 8px; font-size: 12px; color: #777; text-align: right; }
+  .mock { margin-top: 18px; padding: 8px; border: 1px dashed #aaa; font-size: 13px; color: #555; }
+  .mock a { margin: 0 4px; color: #00c; cursor: pointer; text-decoration: underline; }
+  .mock a.on { font-weight: bold; color: #000; text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .row { grid-template-columns: 1fr; gap: 4px; }
+    .row input.short { max-width: none; }
+    .btn { width: 100%; }
+    .filters { flex-direction: column; gap: 6px; }
+    .filters label { justify-content: space-between; }
+    .filters select { flex: 1; margin-left: 8px; }
+    .tabs button { flex: 1; padding: 12px 0; }
+    .overlay { padding: 0; }
+    .panel { max-width: none; min-height: 100%; border: none; }
+    .photo { height: 200px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>경비 정산</h1>
+  <div class="tabs">
+    <button data-tab="reg" class="on">등록</button>
+    <button data-tab="list">목록</button>
+    <button data-tab="sum">집계</button>
+  </div>
+
+  <!-- S-01 등록 -->
+  <section id="tab-reg">
+    <div class="msg" id="reg-msg"></div>
+    <form id="reg-form" onsubmit="return false">
+      <div class="row"><label for="f-emp">제출자</label>
+        <select id="f-emp"><option value="">직원 고르기</option></select></div>
+      <div class="row"><label for="f-photo">사진</label>
+        <input id="f-photo" type="file" accept="image/jpeg,image/png,image/webp"></div>
+      <div class="row"><label for="f-kind">구분</label>
+        <select id="f-kind"><option value="">고르기</option><option>식사</option><option>카페</option><option>택시</option></select></div>
+      <div class="row"><label for="f-date">날짜</label>
+        <input id="f-date" type="date"></div>
+      <div class="row"><label for="f-time">시각</label>
+        <div><input id="f-time" class="short" type="text" inputmode="numeric" placeholder="12:20" maxlength="5"> <span class="hint">24시간 형식</span></div></div>
+      <div class="row"><label for="f-store">가게 이름</label>
+        <input id="f-store" type="text"></div>
+      <div class="row"><label for="f-total">합계(원)</label>
+        <input id="f-total" type="text" inputmode="numeric"></div>
+      <div class="row" id="r-purpose"><label for="f-purpose">목적</label>
+        <select id="f-purpose"><option value="">고르기</option><option>일반</option><option>회식</option><option>접대</option></select></div>
+      <div class="row" id="r-people"><label for="f-people">인원</label>
+        <input id="f-people" class="short" type="text" inputmode="numeric"></div>
+      <div class="row hidden" id="r-guest"><label for="f-guest">접대 상대</label>
+        <input id="f-guest" type="text"></div>
+      <div class="row"><label for="f-memo">메모</label>
+        <input id="f-memo" type="text"></div>
+      <div class="center"><button class="btn" id="reg-btn" type="button">등록</button></div>
+    </form>
+  </section>
+
+  <!-- S-02 목록 -->
+  <section id="tab-list" class="hidden">
+    <div class="filters">
+      <label>월 <select id="l-month"><option>2026-10</option></select></label>
+      <label>제출자 <select id="l-emp"><option value="">전체</option></select></label>
+      <label>구분 <select id="l-kind"><option value="">전체</option><option>식사</option><option>카페</option><option>택시</option></select></label>
+    </div>
+    <div class="msg" id="list-msg"></div>
+    <div class="tablebox" id="list-box">
+      <table>
+        <thead><tr><th>일시</th><th>제출자</th><th>구분</th><th>가게</th><th class="num">합계</th><th>등록</th></tr></thead>
+        <tbody class="click" id="list-body"></tbody>
+        <tfoot><tr><td colspan="6" class="num" id="list-foot"></td></tr></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- S-03 집계 -->
+  <section id="tab-sum" class="hidden">
+    <div class="filters">
+      <label>월 <select id="s-month"><option>2026-10</option></select></label>
+    </div>
+    <div class="msg" id="sum-msg"></div>
+    <div class="sum" id="sum-box"></div>
+  </section>
+
+  <footer>v1.0</footer>
+
+  <div class="mock">
+    시안 전용 — 상태 보기:
+    <a data-state="loading">불러오는 중</a> ·
+    <a data-state="normal" class="on">정상</a> ·
+    <a data-state="empty">비어 있음</a> ·
+    <a data-state="error">오류</a>
+  </div>
+</div>
+
+<!-- S-04 상세 -->
+<div class="overlay hidden" id="detail">
+  <div class="panel">
+    <div class="head"><b>영수증 상세</b><button class="btn" id="d-close" style="padding:6px 14px;width:auto">닫기</button></div>
+    <div class="msg" id="d-msg"></div>
+    <div id="d-body"></div>
+  </div>
+</div>
+
+<script>
+// ── 시안용 가짜 데이터 (Supabase 연결 없음) ──
+const EMPLOYEES = [
+  { emp_no: "E2101", name: "박서연", dept: "영업1팀", title: "과장" },
+  { emp_no: "E2102", name: "이도현", dept: "영업1팀", title: "대리" },
+  { emp_no: "E2103", name: "김준호", dept: "영업1팀", title: "사원" },
+];
+const RECEIPTS = [
+  { id: 1, emp_no: "E2101", kind: "식사", used_at: "2026-10-01 12:12", store_name: "가나식당", total: 28000, card_last4: "0000",
+    purpose: "일반", people: 2, guest_company: null, memo: "외근 중 점심 (가짜)", source: "AI",
+    items: [ { item_name: "김치찌개", qty: 2, unit_price: 9500, amount: 19000 }, { item_name: "계란말이", qty: 1, unit_price: 9000, amount: 9000 } ] },
+  { id: 2, emp_no: "E2102", kind: "카페", used_at: "2026-10-12 15:10", store_name: "다라카페", total: 12500, card_last4: null,
+    purpose: "일반", people: 2, guest_company: null, memo: "업체 미팅 전 회의 (가짜)", source: "웹", items: [] },
+  { id: 3, emp_no: "E2101", kind: "택시", used_at: "2026-10-12 18:55", store_name: "마바운수", total: 14300, card_last4: "0000",
+    purpose: null, people: null, guest_company: null, memo: "미팅 장소로 이동 (가짜)", source: "AI",
+    items: [ { item_name: "택시 운임", qty: 1, unit_price: 14300, amount: 14300 } ] },
+];
+
+const $ = (id) => document.getElementById(id);
+const won = (n) => n.toLocaleString("ko-KR");
+const empOf = (no) => EMPLOYEES.find((e) => e.emp_no === no) || { name: "?", dept: "" };
+let state = "normal";
+let tab = "reg";
+
+// ── 탭 ──
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(); });
+
+// ── 상태 보기 (시안 전용) ──
+document.querySelectorAll(".mock a").forEach((a) => a.onclick = () => {
+  state = a.dataset.state;
+  document.querySelectorAll(".mock a").forEach((x) => x.classList.toggle("on", x === a));
+  render();
+});
+
+// ── 고르기 목록 채우기 ──
+EMPLOYEES.forEach((e) => {
+  $("f-emp").add(new Option(`${e.name} (${e.dept} ${e.title})`, e.emp_no));
+  $("l-emp").add(new Option(e.name, e.emp_no));
+});
+$("f-date").value = "2026-11-06";
+
+// ── 등록 칸: 택시면 목적·인원·접대 상대 숨김, 접대일 때만 접대 상대 ──
+function syncFields() {
+  const taxi = $("f-kind").value === "택시";
+  $("r-purpose").classList.toggle("hidden", taxi);
+  $("r-people").classList.toggle("hidden", taxi);
+  $("r-guest").classList.toggle("hidden", taxi || $("f-purpose").value !== "접대");
+}
+$("f-kind").onchange = syncFields;
+$("f-purpose").onchange = syncFields;
+
+function setMsg(id, text, cls) { const m = $(id); m.textContent = text || ""; m.className = "msg" + (cls ? " " + cls : ""); }
+
+$("reg-btn").onclick = () => {
+  const v = (id) => $(id).value.trim();
+  const taxi = v("f-kind") === "택시";
+  let err = "";
+  if (!v("f-emp")) err = "제출자를 골라 주세요.";
+  else if (!$("f-photo").files.length) err = "영수증 사진을 골라 주세요.";
+  else if (!v("f-kind")) err = "구분을 골라 주세요.";
+  else if (!v("f-date")) err = "날짜를 골라 주세요.";
+  else if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v("f-time"))) err = "시각은 12:20처럼 24시간 형식으로 적어 주세요.";
+  else if (!v("f-store")) err = "가게 이름을 적어 주세요.";
+  else if (!/^[1-9]\d*$/.test(v("f-total").replace(/,/g, ""))) err = "합계는 원 단위 숫자로 적어 주세요.";
+  else if (!taxi && !v("f-purpose")) err = "목적을 골라 주세요.";
+  else if (!taxi && !/^[1-9]\d*$/.test(v("f-people"))) err = "인원은 1 이상의 숫자로 적어 주세요.";
+  else if (!taxi && v("f-purpose") === "접대" && !v("f-guest")) err = "접대 상대를 적어 주세요.";
+  if (err) { setMsg("reg-msg", err, "err"); return; }
+  setMsg("reg-msg", "등록했습니다. (시안이라 실제로 저장되지는 않습니다)", "ok");
+  $("reg-form").reset(); $("f-date").value = "2026-11-06"; syncFields();
+};
+
+// ── 목록 ──
+["l-month", "l-emp", "l-kind"].forEach((id) => $(id).onchange = render);
+
+function renderList() {
+  const box = $("list-box");
+  if (state === "loading") { setMsg("list-msg", "불러오는 중…"); box.classList.add("hidden"); return; }
+  if (state === "error") { setMsg("list-msg", "인터넷 연결을 확인해 주세요. (서버에 연결하지 못했습니다)", "err"); box.classList.add("hidden"); return; }
+  const rows = state === "empty" ? [] : RECEIPTS
+    .filter((r) => r.used_at.startsWith($("l-month").value))
+    .filter((r) => !$("l-emp").value || r.emp_no === $("l-emp").value)
+    .filter((r) => !$("l-kind").value || r.kind === $("l-kind").value)
+    .sort((a, b) => b.used_at.localeCompare(a.used_at));
+  if (!rows.length) { setMsg("list-msg", "이 조건에 맞는 영수증이 없습니다."); box.classList.add("hidden"); return; }
+  setMsg("list-msg", ""); box.classList.remove("hidden");
+  $("list-body").innerHTML = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.used_at}</td><td>${empOf(r.emp_no).name}</td><td>${r.kind}</td><td>${r.store_name}</td><td class="num">${won(r.total)}</td><td>${r.source}</td>`;
+    tr.onclick = () => openDetail(r);
+    $("list-body").appendChild(tr);
+  });
+  $("list-foot").textContent = `${rows.length}건 · 합계 ${won(rows.reduce((s, r) => s + r.total, 0))}원`;
+}
+
+// ── 집계 ──
+$("s-month").onchange = render;
+
+function group(rows, keyFn, order) {
+  const m = new Map(order ? order.map((k) => [k, { n: 0, sum: 0 }]) : []);
+  rows.forEach((r) => { const k = keyFn(r); const g = m.get(k) || { n: 0, sum: 0 }; g.n++; g.sum += r.total; m.set(k, g); });
+  return [...m.entries()];
+}
+function table(title, entries) {
+  return `<h3>${title}</h3><div class="tablebox"><table><thead><tr><th></th><th class="num">건수</th><th class="num">금액(원)</th></tr></thead><tbody>` +
+    entries.map(([k, g]) => `<tr><td>${k}</td><td class="num">${g.n}</td><td class="num">${won(g.sum)}</td></tr>`).join("") + `</tbody></table></div>`;
+}
+function renderSum() {
+  const box = $("sum-box");
+  if (state === "loading") { setMsg("sum-msg", "불러오는 중…"); box.innerHTML = ""; return; }
+  if (state === "error") { setMsg("sum-msg", "인터넷 연결을 확인해 주세요. (서버에 연결하지 못했습니다)", "err"); box.innerHTML = ""; return; }
+  const rows = state === "empty" ? [] : RECEIPTS.filter((r) => r.used_at.startsWith($("s-month").value));
+  if (!rows.length) { setMsg("sum-msg", "이 달에 등록된 영수증이 없습니다."); box.innerHTML = ""; return; }
+  setMsg("sum-msg", "");
+  const meal = rows.filter((r) => r.kind === "식사");
+  const mealSum = meal.reduce((s, r) => s + r.total, 0);
+  const mealPeople = meal.reduce((s, r) => s + (r.people || 0), 0);
+  const perHead = mealPeople ? won(Math.round(mealSum / mealPeople)) + "원" : "식사 없음";
+  const byEmp = group(rows, (r) => `${empOf(r.emp_no).name} (${empOf(r.emp_no).dept})`).sort((a, b) => b[1].sum - a[1].sum);
+  box.innerHTML =
+    `<p class="big">건수 <b>${rows.length}건</b> · 합계 <b>${won(rows.reduce((s, r) => s + r.total, 0))}원</b></p>` +
+    `<p class="big">식사 1인당 <b>${perHead}</b> <span class="hint">(식사 합계 ${won(mealSum)}원 ÷ 식사 인원 ${mealPeople}명)</span></p>` +
+    table("구분별 합계", group(rows, (r) => r.kind, ["식사", "카페", "택시"])) +
+    table("목적별 합계", group(rows, (r) => r.purpose || "목적 없음", ["일반", "회식", "접대", "목적 없음"])) +
+    table("직원별 합계 (금액 많은 순)", byEmp);
+}
+
+// ── 상세 ──
+let current = null;
+function openDetail(r) { current = r; $("detail").classList.remove("hidden"); renderDetail(); }
+$("d-close").onclick = () => { current = null; $("detail").classList.add("hidden"); };
+$("detail").onclick = (e) => { if (e.target.id === "detail") $("d-close").onclick(); };
+
+function renderDetail() {
+  if (!current) return;
+  const r = current, body = $("d-body");
+  if (state === "loading") { setMsg("d-msg", "불러오는 중…"); body.innerHTML = ""; return; }
+  if (state === "error") { setMsg("d-msg", "사진을 열지 못했습니다. 잠시 뒤 다시 열어 주세요.", "err"); }
+  else setMsg("d-msg", "");
+  const e = empOf(r.emp_no), dash = (x) => (x == null || x === "" ? "-" : x);
+  let items;
+  if (!r.items.length) items = `<p>품목 없음</p>`;
+  else {
+    const s = r.items.reduce((a, i) => a + i.amount, 0);
+    const check = s === r.total ? "일치" : `불일치 (차이 ${won(r.total - s)}원)`;
+    items = `<div class="tablebox"><table><thead><tr><th>품목</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th></tr></thead><tbody>` +
+      r.items.map((i) => `<tr><td>${i.item_name}</td><td class="num">${i.qty}</td><td class="num">${won(i.unit_price)}</td><td class="num">${won(i.amount)}</td></tr>`).join("") +
+      `</tbody></table></div><p>품목 합 ${won(s)} = 합계 ${won(r.total)} · <b>${check}</b></p>`;
+  }
+  body.innerHTML =
+    `<div class="photo">${state === "error" ? "사진을 열지 못함" : "(영수증 사진 자리)"}</div>` +
+    `<dl><dt>구분</dt><dd>${r.kind}</dd><dt>일시</dt><dd>${r.used_at}</dd><dt>가게</dt><dd>${r.store_name}</dd>` +
+    `<dt>합계</dt><dd>${won(r.total)}원</dd><dt>제출자</dt><dd>${e.name} (${e.dept})</dd>` +
+    `<dt>목적</dt><dd>${dash(r.purpose)}</dd><dt>인원</dt><dd>${dash(r.people)}</dd><dt>접대 상대</dt><dd>${dash(r.guest_company)}</dd>` +
+    `<dt>카드 끝</dt><dd>${dash(r.card_last4)}</dd><dt>등록 방식</dt><dd>${r.source}</dd><dt>메모</dt><dd>${dash(r.memo)}</dd></dl>` + items;
+}
+
+// ── 등록 화면 상태 ──
+function renderReg() {
+  const loading = state === "loading";
+  document.querySelectorAll("#reg-form input, #reg-form select, #reg-btn").forEach((el) => el.disabled = loading);
+  $("reg-btn").textContent = loading ? "등록 중…" : "등록";
+  if (loading) setMsg("reg-msg", "등록 중…");
+  else if (state === "error") setMsg("reg-msg", "시각은 12:20처럼 24시간 형식으로 적어 주세요.", "err");
+  else setMsg("reg-msg", "");
+}
+
+function render() {
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  ["reg", "list", "sum"].forEach((t) => $("tab-" + t).classList.toggle("hidden", t !== tab));
+  const locked = state === "loading";
+  ["l-month", "l-emp", "l-kind", "s-month"].forEach((id) => $(id).disabled = locked);
+  if (tab === "reg") renderReg();
+  if (tab === "list") renderList();
+  if (tab === "sum") renderSum();
+  renderDetail();
+}
+syncFields();
+render();
+</script>
+</body>
+</html>
