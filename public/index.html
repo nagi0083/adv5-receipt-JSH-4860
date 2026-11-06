@@ -114,6 +114,8 @@
 
   <!-- S-02 목록 -->
   <section id="tab-list" class="hidden">
+    <!-- F-12 목록 요약 줄 (v1.1) -->
+    <p class="big hidden" id="list-summary"></p>
     <div class="filters">
       <label>월 <select id="l-month"></select></label>
       <label>제출자 <select id="l-emp"><option value="">전체</option></select></label>
@@ -124,7 +126,6 @@
       <table>
         <thead><tr><th>일시</th><th>제출자</th><th>구분</th><th>가게</th><th class="num">합계</th><th>등록</th></tr></thead>
         <tbody class="click" id="list-body"></tbody>
-        <tfoot><tr><td colspan="6" class="num" id="list-foot"></td></tr></tfoot>
       </table>
     </div>
   </section>
@@ -139,7 +140,7 @@
   </section>
 
   <!-- F-10 버전 표시 -->
-  <footer id="version">v1.0</footer>
+  <footer id="version">v1.1</footer>
 </div>
 
 <!-- S-04 상세 -->
@@ -357,14 +358,18 @@ $("reg-btn").onclick = async () => {
 ["l-month", "l-emp", "l-kind"].forEach((id) => $(id).onchange = render);
 
 function renderList() {
-  const box = $("list-box");
+  const box = $("list-box"), summary = $("list-summary");
   box.classList.add("hidden");
+  summary.classList.add("hidden");
   if (loadState === "loading") return setMsg("list-msg", "불러오는 중…");
   if (loadState === "error") return setMsg("list-msg", loadError, "err");
   const rows = receipts
     .filter((r) => monthOf(r) === $("l-month").value)
     .filter((r) => !$("l-emp").value || r.emp_no === $("l-emp").value)
     .filter((r) => !$("l-kind").value || r.kind === $("l-kind").value);
+  // F-12 목록 요약 줄: 지금 고른 조건의 건수 · 합계
+  summary.textContent = `${rows.length}건 · ${won(rows.reduce((s, r) => s + (r.total || 0), 0))}원`;
+  summary.classList.remove("hidden");
   if (!rows.length) return setMsg("list-msg", "이 조건에 맞는 영수증이 없습니다.");
   setMsg("list-msg", "");
   box.classList.remove("hidden");
@@ -376,7 +381,6 @@ function renderList() {
     tr.onclick = () => openDetail(r);
     $("list-body").appendChild(tr);
   });
-  $("list-foot").textContent = `${rows.length}건 · 합계 ${won(rows.reduce((s, r) => s + (r.total || 0), 0))}원`;
 }
 
 // ── F-07 집계 ──
